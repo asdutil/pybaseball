@@ -40,14 +40,14 @@ def get_tables(soup: BeautifulSoup, season: int) -> pd.DataFrame:
         # find bref ID in player link and add to data
         cols.append(get_bref_id_from_player_link(player_link.get('href')))
 
-        data.append([ele for ele in cols])
+        data.append(cols)
 
     # use headings for column names
     return pd.DataFrame(data, columns=headings)
 
 
 @cache.df_cache()
-def appearances_bref(season:Optional[int] = None) -> pd.DataFrame:
+def appearances_bref(season: Optional[int] = None) -> pd.DataFrame:
     """
     Returns a pandas DataFrame of the defensive appearances for a given MLB season, or
     appearances for the current / most recent season if the date is not specified.

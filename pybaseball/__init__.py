@@ -40,6 +40,9 @@ from .daily_schedule import (
 from .league_batting_stats import batting_stats_bref
 from .appearances_bref import appearances_bref
 from .active_roster import active_roster
+from .depth_chart import depth_chart
+from .depth_chart import depth_chart_batting
+from .depth_chart import depth_chart_pitching
 from .league_batting_stats import batting_stats_range
 from .league_batting_stats import bwar_bat
 from .league_pitching_stats import pitching_stats_bref
