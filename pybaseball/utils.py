@@ -5,6 +5,7 @@ import functools
 import io
 from typing import Dict, Iterator, Optional, Tuple, Union
 import zipfile
+from urllib.parse import urlparse, parse_qs
 
 import pandas as pd
 import requests
@@ -426,6 +427,12 @@ def norm_positions(pos: Union[int, str], to_word: bool = False, to_number: bool 
 def get_bref_id_from_player_link(player_link: str) -> str:
 
 	return re.search("players/[a-z]/([a-z0-9]+)\\.shtml", player_link).group(1)
+
+# pull out MLBAM ID from redirect page link using a regex
+def get_mlbam_id_from_player_link(player_link: str) -> str:
+	'''https://www.baseball-reference.com/redirect.fcgi?player=1&mlb_ID=663623'''
+	parsed_url = urlparse(player_link)
+	return parse_qs(parsed_url.query)['mlb_ID'][0]
 
 def append_player_id_or_alt_url_from_link(player_link: str, cols: [str]):
 	if player_link.startswith('/players/'):

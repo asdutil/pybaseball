@@ -1,28 +1,85 @@
 from enum import Enum
+from typing import Any, Type
 
 import pandas as pd
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, PageElement
 
 from . import cache
-from .utils import most_recent_season, get_bref_id_from_player_link, ACTIVE_TEAMS_MAPPING, ACTIVE_TEAMS, get_bref_table
+from .utils import ACTIVE_TEAMS_MAPPING, ACTIVE_TEAMS, get_bref_table, get_mlbam_id_from_player_link
 from .datasources.bref import BRefSession
 
-class Level(Enum):
-    MAJ = 1, 'MAJ'
-    AAA = 2, 'AAA'
-    AA = 3, 'AA'
-    HIGH_A = 4, 'H-A'
-    LOW_A = 5, 'L-A'
-    ROK = 6, 'ROK'
+session = BRefSession()
 
+# level column heading in bref table
 LEVEL_HEADING = 'Lev'
+
+# default minimum level for results
+DEFAULT_LEVEL = 'MAJ'
 
 # ids of tables used on bref
 BATTING_TABLE_IDS = ['Catcher', 'Infielder2BSS3B', 'Outfield', 'FirstBaseDesignatedHitterorPinchHitter', 'Utility']
 PITCHING_TABLE_IDS = ['Right-HandedStarters', 'Left-HandedStarters', 'Right-HandedRelievers',
                           'Left-HandedRelievers', 'OtherPitcher', 'Closers']
 
-session = BRefSession()
+# status constants
+STRONG_TAG = 'strong'
+SMALL_TAG = 'small'
+ACTIVE_ROSTER = '26-man'
+FORTY_MAN = '40-man'
+IL_60 = 'IL-60'
+IL_15 = 'IL-15'
+IL_10 = 'IL-10'
+IL_7 = 'IL-7'
+
+# enum representing levels of organized baseball
+class Level(Enum):
+    MAJ = 1
+    AAA = 2
+    AA = 3
+    HIGH_A = 4
+    LOW_A = 5
+    ROK = 6
+
+# enum name can't have a hyphen in it, so translate here
+def level_name(name: str) -> str:
+    if name == 'H-A':
+        return 'HIGH_A'
+
+    if name == 'L-A':
+        return 'LOW_A'
+
+    return name
+
+# get a status string from the player link. indicates 26-man roster, 40-man, or IL
+def get_player_status(player_link: PageElement) -> str:
+    # <strong> parent means on the 26-man roster
+    if player_link.parent.name == STRONG_TAG:
+        return ACTIVE_ROSTER
+
+    # next sibling indicates all other statuses
+    next_sibling = player_link.next_sibling
+
+    print(next_sibling)
+
+    if not next_sibling or next_sibling.name != SMALL_TAG:
+        return ''
+
+    print(next_sibling.text)
+
+    if '(40-man)' in next_sibling.text:
+        return FORTY_MAN
+
+    if '(60-day IL)' in next_sibling.text:
+        return IL_60
+
+    if '(15-day IL)' in next_sibling.text:
+        return IL_15
+
+    if '(10-day IL)' in next_sibling.text:
+        return IL_10
+
+    if '(7-day IL)' in next_sibling.text:
+        return IL_7
 
 def get_soup(team: str, player_type: str) -> BeautifulSoup:
     url = (f'https://www.baseball-reference.com/teams/{team}/{ACTIVE_TEAMS_MAPPING[team]}-'
@@ -30,7 +87,19 @@ def get_soup(team: str, player_type: str) -> BeautifulSoup:
     s = session.get(url).content
     return BeautifulSoup(s, "lxml")
 
-def process_tables(soup: BeautifulSoup, table_ids: [str], min_level: Level = Level.MAJ) -> pd.DataFrame:
+def get_highest_level(level: str) -> Level:
+    # no comma, we don't need to split
+    if ',' not in level:
+        return Level[level_name(level)]
+
+    levels = [Level[level_name(l)] for l in level.split(',')]
+
+    # sort on numerical value, highest level will be first
+    levels.sort(key=lambda x: x.value)
+
+    return levels[0]
+
+def process_tables(soup: BeautifulSoup, table_ids: [str], min_level: Level) -> pd.DataFrame:
     data = []
 
     headings = []
@@ -50,9 +119,11 @@ def process_tables(soup: BeautifulSoup, table_ids: [str], min_level: Level = Lev
             # remove the Rk header, it's unnecessary
             headings.pop(0)
 
+            # add column indicating 40-man roster or IL
+            headings.append('status')
+
             # add ID column name and alt url for players that don't have an ID
-            headings.append('player_ID')
-            headings.append('Alt URL')
+            headings.append('mlb_ID')
 
             lev_index = headings.index(LEVEL_HEADING)
 
@@ -63,19 +134,22 @@ def process_tables(soup: BeautifulSoup, table_ids: [str], min_level: Level = Lev
             player_link = row.find('a')
             if not player_link:
                 continue
+
             cols = row.find_all('td')
             cols = [ele.text.strip() for ele in cols]
 
-            print(cols)
+            # get status string and add to data
+            cols.append(get_player_status(player_link))
 
             # skip if level is not in requested range
-            player_level = Level[cols[lev_index]]
-            print(player_link)
-            if player_level.value > min_level.value:
+            level_str = cols[lev_index]
+
+            level = get_highest_level(level_str)
+            if level.value > min_level.value:
                 continue
 
             # find bref ID in player link and add to data
-            cols.append(get_bref_id_from_player_link(player_link.get('href')))
+            cols.append(get_mlbam_id_from_player_link(player_link.get('href')))
 
             data.append(cols)
 
@@ -83,7 +157,7 @@ def process_tables(soup: BeautifulSoup, table_ids: [str], min_level: Level = Lev
     return pd.DataFrame(data, columns=headings)
 
 @cache.df_cache()
-def depth_chart_batting(team: str, min_level: Level = Level.MAJ) -> pd.DataFrame:
+def depth_chart_batting(team: str, min_level: str = DEFAULT_LEVEL) -> pd.DataFrame:
     """
     Returns a pandas DataFrame of the position players in the system of the specified team. Players returned will
     play at level specified in min_level or above.
@@ -101,11 +175,11 @@ def depth_chart_batting(team: str, min_level: Level = Level.MAJ) -> pd.DataFrame
 
     # retrieve html from baseball reference
     soup = get_soup(team, 'batting')
-    df = process_tables(soup, BATTING_TABLE_IDS, min_level)
+    df = process_tables(soup, BATTING_TABLE_IDS, Level[level_name(min_level)])
     return df
 
 @cache.df_cache()
-def depth_chart_pitching(team: str, min_level: Level = Level.MAJ) -> pd.DataFrame:
+def depth_chart_pitching(team: str, min_level: str = DEFAULT_LEVEL) -> pd.DataFrame:
     """
     Returns a pandas DataFrame of the pitchers in the system of the specified team. Players returned will
     play at level specified in min_level or above.
@@ -123,11 +197,11 @@ def depth_chart_pitching(team: str, min_level: Level = Level.MAJ) -> pd.DataFram
 
     # retrieve html from baseball reference
     soup = get_soup(team, 'pitching')
-    df = process_tables(soup, PITCHING_TABLE_IDS, min_level)
+    df = process_tables(soup, PITCHING_TABLE_IDS, Level[level_name(min_level)])
     return df
 
 @cache.df_cache()
-def depth_chart(team: str, min_level: Level = Level.MAJ) -> pd.DataFrame:
+def depth_chart(team: str, min_level: str = DEFAULT_LEVEL) -> pd.DataFrame:
     """
     Returns a pandas DataFrame of the players in the system of the specified team. Players returned will
     play at level specified in min_level or above.
