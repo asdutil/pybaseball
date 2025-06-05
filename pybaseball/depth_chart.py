@@ -1,8 +1,9 @@
+import re
 from enum import Enum
 from typing import Any, Type
 
 import pandas as pd
-from bs4 import BeautifulSoup, PageElement
+from bs4 import BeautifulSoup, Tag
 
 from . import cache
 from .utils import ACTIVE_TEAMS_MAPPING, ACTIVE_TEAMS, get_bref_table, get_mlbam_id_from_player_link
@@ -12,6 +13,7 @@ session = BRefSession()
 
 # level column heading in bref table
 LEVEL_HEADING = 'Lev'
+NAME_HEADING = 'Name'
 
 # default minimum level for results
 DEFAULT_LEVEL = 'MAJ'
@@ -51,35 +53,33 @@ def level_name(name: str) -> str:
     return name
 
 # get a status string from the player link. indicates 26-man roster, 40-man, or IL
-def get_player_status(player_link: PageElement) -> str:
+def get_player_status(player_link: Tag) -> str:
     # <strong> parent means on the 26-man roster
     if player_link.parent.name == STRONG_TAG:
         return ACTIVE_ROSTER
 
-    # next sibling indicates all other statuses
-    next_sibling = player_link.next_sibling
+    # find the small tag that contains the status
+    small_tag = player_link.parent.find('small')
 
-    print(next_sibling)
-
-    if not next_sibling or next_sibling.name != SMALL_TAG:
+    if not small_tag:
         return ''
 
-    print(next_sibling.text)
-
-    if '(40-man)' in next_sibling.text:
+    if '(40-man)' in small_tag.text:
         return FORTY_MAN
 
-    if '(60-day IL)' in next_sibling.text:
+    if '(60-day IL)' in small_tag.text:
         return IL_60
 
-    if '(15-day IL)' in next_sibling.text:
+    if '(15-day IL)' in small_tag.text:
         return IL_15
 
-    if '(10-day IL)' in next_sibling.text:
+    if '(10-day IL)' in small_tag.text:
         return IL_10
 
-    if '(7-day IL)' in next_sibling.text:
+    if '(7-day IL)' in small_tag.text:
         return IL_7
+
+    return ''
 
 def get_soup(team: str, player_type: str) -> BeautifulSoup:
     url = (f'https://www.baseball-reference.com/teams/{team}/{ACTIVE_TEAMS_MAPPING[team]}-'
@@ -99,6 +99,21 @@ def get_highest_level(level: str) -> Level:
 
     return levels[0]
 
+def sanitize_player_name(player_name: str) -> str:
+    # remove parens and their contents
+    player_name = re.sub(r' \(.*\)', '', player_name)
+
+    # remove asterisk
+    player_name = player_name.replace('*', '')
+
+    # remove #
+    player_name = player_name.replace('#', '')
+
+    # remove comma and render name as First Last
+    names = player_name.split(', ')
+
+    return f'{names[1]} {names[0]}'
+
 def process_tables(soup: BeautifulSoup, table_ids: [str], min_level: Level) -> pd.DataFrame:
     data = []
 
@@ -106,11 +121,16 @@ def process_tables(soup: BeautifulSoup, table_ids: [str], min_level: Level) -> p
 
     # index of level column
     lev_index = 0
+    name_index = 0
 
     for table_id in table_ids:
 
         # get depth chart table
         table = get_bref_table(table_id, soup)
+
+        # skip table if it's not found
+        if not table:
+            continue
 
         # headings are always the same, only need to set them once
         if not headings:
@@ -126,6 +146,7 @@ def process_tables(soup: BeautifulSoup, table_ids: [str], min_level: Level) -> p
             headings.append('mlb_ID')
 
             lev_index = headings.index(LEVEL_HEADING)
+            name_index = headings.index(NAME_HEADING)
 
         # pull in data rows
         table_body = table.find('tbody')
@@ -143,6 +164,9 @@ def process_tables(soup: BeautifulSoup, table_ids: [str], min_level: Level) -> p
 
             # skip if level is not in requested range
             level_str = cols[lev_index]
+
+            # sanitize name and rearrange to fit other bref results
+            cols[name_index] = sanitize_player_name(cols[name_index])
 
             level = get_highest_level(level_str)
             if level.value > min_level.value:

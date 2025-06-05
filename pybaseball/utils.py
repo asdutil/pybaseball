@@ -430,7 +430,6 @@ def get_bref_id_from_player_link(player_link: str) -> str:
 
 # pull out MLBAM ID from redirect page link using a regex
 def get_mlbam_id_from_player_link(player_link: str) -> str:
-	'''https://www.baseball-reference.com/redirect.fcgi?player=1&mlb_ID=663623'''
 	parsed_url = urlparse(player_link)
 	return parse_qs(parsed_url.query)['mlb_ID'][0]
 
@@ -446,7 +445,7 @@ def append_player_id_or_alt_url_from_link(player_link: str, cols: [str]):
 		cols.append(player_link)
 
 # find the table with the specified ID, either directly or by parsing the comment
-def get_bref_table(table_id: str, haystack: BeautifulSoup) -> BeautifulSoup:
+def get_bref_table(table_id: str, haystack: BeautifulSoup) -> BeautifulSoup | None:
 	table = haystack.find(id=table_id)
 
 	# first check for the table in the document
@@ -455,6 +454,11 @@ def get_bref_table(table_id: str, haystack: BeautifulSoup) -> BeautifulSoup:
 
 	# if not present, find the commented table and parse that
 	all_div = haystack.find(id=f'all_{table_id}')
+
+	# if that also isn't present, return
+	if not all_div:
+		return None
+
 	comment = all_div.find(text=lambda text: isinstance(text, Comment))
 	table_wrapper = BeautifulSoup(comment, 'lxml')
 	return table_wrapper.find(id=table_id)
