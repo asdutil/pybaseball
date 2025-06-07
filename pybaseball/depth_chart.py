@@ -1,11 +1,10 @@
 import re
-from enum import Enum
-from typing import Any, Type
 
 import pandas as pd
 from bs4 import BeautifulSoup, Tag
 
 from . import cache
+from .enums.enum_base import EnumBase
 from .utils import ACTIVE_TEAMS_MAPPING, ACTIVE_TEAMS, get_bref_table, get_mlbam_id_from_player_link
 from .datasources.bref import BRefSession
 
@@ -34,7 +33,7 @@ IL_10 = 'IL-10'
 IL_7 = 'IL-7'
 
 # enum representing levels of organized baseball
-class Level(Enum):
+class Level(EnumBase):
     MAJ = 1
     AAA = 2
     AA = 3
@@ -59,7 +58,7 @@ def get_player_status(player_link: Tag) -> str:
         return ACTIVE_ROSTER
 
     # find the small tag that contains the status
-    small_tag = player_link.parent.find('small')
+    small_tag = player_link.parent.find(SMALL_TAG)
 
     if not small_tag:
         return ''
@@ -88,11 +87,11 @@ def get_soup(team: str, player_type: str) -> BeautifulSoup:
     return BeautifulSoup(s, "lxml")
 
 def get_highest_level(level: str) -> Level:
-    # no comma, we don't need to split
+    # if no comma, we don't need to split
     if ',' not in level:
-        return Level[level_name(level)]
+        return Level.parse(level)
 
-    levels = [Level[level_name(l)] for l in level.split(',')]
+    levels = [Level.parse(level_name(l)) for l in level.split(',')]
 
     # sort on numerical value, highest level will be first
     levels.sort(key=lambda x: x.value)
@@ -119,7 +118,7 @@ def process_tables(soup: BeautifulSoup, table_ids: [str], min_level: Level) -> p
 
     headings = []
 
-    # index of level column
+    # index of level and name columns
     lev_index = 0
     name_index = 0
 
@@ -168,11 +167,12 @@ def process_tables(soup: BeautifulSoup, table_ids: [str], min_level: Level) -> p
             # sanitize name and rearrange to fit other bref results
             cols[name_index] = sanitize_player_name(cols[name_index])
 
+            # highest level the player has reached this season
             level = get_highest_level(level_str)
             if level.value > min_level.value:
                 continue
 
-            # find bref ID in player link and add to data
+            # find mlbam ID in player link and add to data
             cols.append(get_mlbam_id_from_player_link(player_link.get('href')))
 
             data.append(cols)
@@ -199,7 +199,7 @@ def depth_chart_batting(team: str, min_level: str = DEFAULT_LEVEL) -> pd.DataFra
 
     # retrieve html from baseball reference
     soup = get_soup(team, 'batting')
-    df = process_tables(soup, BATTING_TABLE_IDS, Level[level_name(min_level)])
+    df = process_tables(soup, BATTING_TABLE_IDS, Level.parse(level_name(min_level)))
     return df
 
 @cache.df_cache()
@@ -221,7 +221,7 @@ def depth_chart_pitching(team: str, min_level: str = DEFAULT_LEVEL) -> pd.DataFr
 
     # retrieve html from baseball reference
     soup = get_soup(team, 'pitching')
-    df = process_tables(soup, PITCHING_TABLE_IDS, Level[level_name(min_level)])
+    df = process_tables(soup, PITCHING_TABLE_IDS, Level.parse(level_name(min_level)))
     return df
 
 @cache.df_cache()
