@@ -22,6 +22,9 @@ BATTING_TABLE_IDS = ['Catcher', 'Infielder2BSS3B', 'Outfield', 'FirstBaseDesigna
 PITCHING_TABLE_IDS = ['Right-HandedStarters', 'Left-HandedStarters', 'Right-HandedRelievers',
                           'Left-HandedRelievers', 'OtherPitcher', 'Closers']
 
+# heading for mlb ID
+MLB_ID = 'mlb_ID'
+
 # status constants
 STRONG_TAG = 'strong'
 SMALL_TAG = 'small'
@@ -89,7 +92,7 @@ def get_soup(team: str, player_type: str) -> BeautifulSoup:
 def get_highest_level(level: str) -> Level:
     # if no comma, we don't need to split
     if ',' not in level:
-        return Level.parse(level)
+        return Level.parse(level_name(level))
 
     levels = [Level.parse(level_name(l)) for l in level.split(',')]
 
@@ -142,7 +145,7 @@ def process_tables(soup: BeautifulSoup, table_ids: [str], min_level: Level) -> p
             headings.append('status')
 
             # add ID column name and alt url for players that don't have an ID
-            headings.append('mlb_ID')
+            headings.append(MLB_ID)
 
             lev_index = headings.index(LEVEL_HEADING)
             name_index = headings.index(NAME_HEADING)
@@ -235,4 +238,4 @@ def depth_chart(team: str, min_level: str = DEFAULT_LEVEL) -> pd.DataFrame:
         min_level (str): minimum level for players to be returned. For example a min_level of 'AA' means major league
             players, AAA players, and AA players will be returned. Default is MAJ, or majors only.
     """
-    return depth_chart_pitching(team, min_level).concat(depth_chart_batting(team, min_level))
+    return depth_chart_pitching(team, min_level).merge(depth_chart_batting(team, min_level), how='outer', on=MLB_ID)
