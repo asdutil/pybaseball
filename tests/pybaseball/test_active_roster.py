@@ -13,7 +13,7 @@ def test_active_roster(response_get_monkeypatch: Callable, sample_html: str):
 
     with pytest.raises(ValueError) as ex_info:
         active_roster('FAKE')
-    assert str(ex_info.value == 'Team must be the three-letter abbreviation of an active MLB team.')
+    assert str(ex_info.value) == 'Team must be the three-letter abbreviation of an active MLB team.'
 
     active_roster_result = active_roster('WSN')
 

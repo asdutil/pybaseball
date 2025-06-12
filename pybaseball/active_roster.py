@@ -1,11 +1,11 @@
-from typing import Optional
-
 import pandas as pd
 from bs4 import BeautifulSoup, Comment
 
 from . import cache
-from .utils import most_recent_season, get_bref_id_from_player_link, ACTIVE_TEAMS
+from .utils import most_recent_season, ACTIVE_TEAMS, append_player_id_or_alt_url_from_link, get_bref_table
 from .datasources.bref import BRefSession
+
+FORTY_MAN_TABLE_ID = 'the40man'
 
 session = BRefSession()
 
@@ -18,10 +18,7 @@ def get_tables(soup: BeautifulSoup) -> pd.DataFrame:
     data = []
 
     # find commented 40-man roster table and parse that
-    all_the40man = soup.find(id='all_the40man')
-    comment = all_the40man.find(text=lambda text: isinstance(text, Comment))
-    table_wrapper = BeautifulSoup(comment, 'lxml')
-    table = table_wrapper.find(id='the40man')
+    table = get_bref_table(FORTY_MAN_TABLE_ID, soup)
 
     headings = [th.get_text() for th in table.find("tr").find_all("th")]
 
@@ -45,14 +42,7 @@ def get_tables(soup: BeautifulSoup) -> pd.DataFrame:
         player_link = player_link.get('href')
 
         # determine whether the player has reached the majors and has a bref ID
-        if player_link.startswith('/players/'):
-            # player has played in majors and has an id
-            cols.append(get_bref_id_from_player_link(player_link))
-            cols.append('')
-        else:
-            # player has not reached the majors, give them an alternate url
-            cols.append('')
-            cols.append(player_link)
+        append_player_id_or_alt_url_from_link(player_link, cols)
 
         data.append([ele for ele in cols])
 
