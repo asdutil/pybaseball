@@ -226,16 +226,3 @@ def depth_chart_pitching(team: str, min_level: str = DEFAULT_LEVEL) -> pd.DataFr
     soup = get_soup(team, 'pitching')
     df = process_tables(soup, PITCHING_TABLE_IDS, Level.parse(level_name(min_level)))
     return df
-
-@cache.df_cache()
-def depth_chart(team: str, min_level: str = DEFAULT_LEVEL) -> pd.DataFrame:
-    """
-    Returns a pandas DataFrame of the players in the system of the specified team. Players returned will
-    play at level specified in min_level or above.
-
-    ARGUMENTS
-        team (str): the three letter abbreviation of an active MLB team
-        min_level (str): minimum level for players to be returned. For example a min_level of 'AA' means major league
-            players, AAA players, and AA players will be returned. Default is MAJ, or majors only.
-    """
-    return depth_chart_pitching(team, min_level).merge(depth_chart_batting(team, min_level), how='outer', on=MLB_ID)
