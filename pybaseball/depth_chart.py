@@ -17,6 +17,10 @@ NAME_HEADING = 'Name'
 # default minimum level for results
 DEFAULT_LEVEL = 'MAJ'
 
+# position summary header, with NBSP
+POSITION_SUMMARY_NBSP = 'Pos Summary'
+POSITION_SUMMARY = 'Pos_Summary'
+
 # ids of tables used on bref
 BATTING_TABLE_IDS = ['Catcher', 'Infielder2BSS3B', 'Outfield', 'FirstBaseDesignatedHitterorPinchHitter', 'Utility']
 PITCHING_TABLE_IDS = ['Right-HandedStarters', 'Left-HandedStarters', 'Right-HandedRelievers',
@@ -181,7 +185,15 @@ def process_tables(soup: BeautifulSoup, table_ids: [str], min_level: Level) -> p
             data.append(cols)
 
     # use headings for column names
-    return pd.DataFrame(data, columns=headings)
+    df = pd.DataFrame(data, columns=headings)
+
+    # rename position summary field to use underscore
+    df = df.rename(columns={POSITION_SUMMARY_NBSP: POSITION_SUMMARY})
+
+    # remove any duplicates, can happen if a pitcher is listed under relievers and closers for example
+    df = df.drop_duplicates(MLB_ID)
+
+    return df
 
 @cache.df_cache()
 def depth_chart_batting(team: str, min_level: str = DEFAULT_LEVEL) -> pd.DataFrame:
